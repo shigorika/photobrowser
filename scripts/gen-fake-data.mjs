@@ -105,6 +105,8 @@ const ALBUMS = [
       // iPhone screenshots: generic IMG_####.PNG names — detected by PNG + no GPS.
       { city: null, date: "2024-05-02T14:22:00Z", desc: "", device: "IOS_PHONE", iosScreenshot: true },
       { city: null, date: "2024-09-13T19:40:00Z", desc: "Concert tickets", device: "IOS_PHONE", iosScreenshot: true },
+      // A small JPG with a normal camera-style name — flagged only by the size rule.
+      { city: "sf", date: "2017-04-10T10:00:00Z", desc: "Old low-res photo", device: "ANDROID_PHONE", smallPhoto: true },
     ],
   },
   {
@@ -125,10 +127,8 @@ const PALETTES = [
   ["#713f12", "#facc15"], ["#3f3f46", "#a1a1aa"],
 ];
 
-async function makeImage(file, label, sub, seed, ext = "jpg") {
+async function makeImage(file, label, sub, seed, ext, w, h) {
   const [c1, c2] = PALETTES[seed % PALETTES.length];
-  const w = 1000 + (seed % 3) * 200;
-  const h = 700 + ((seed * 7) % 3) * 180;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
     <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/>
@@ -174,7 +174,7 @@ async function main() {
       const created = taken + Math.floor(rand() * 86400); // uploaded sometime later
       const isVideo = shot.video && videoSrcExists.length > 0;
 
-      let base, ext;
+      let base, ext, w, h;
       if (isVideo) {
         base = `VID_${shot.date.slice(0, 10).replace(/-/g, "")}_${String(counter).padStart(4, "0")}`;
         ext = "mp4";
@@ -182,16 +182,28 @@ async function main() {
         // Android-style screenshot filename (detected by the "Screenshot" prefix).
         base = `Screenshot_${shot.date.slice(0, 10).replace(/-/g, "")}-${String(100000 + counter)}`;
         ext = "png";
+        [w, h] = [415, 899]; // small phone-screen size
       } else if (shot.iosScreenshot) {
         // iPhone screenshot: generic IMG name, PNG, no GPS (detected by PNG+no-geo).
         base = `IMG_${String(3000 + counter)}`;
         ext = "png";
+        [w, h] = [415, 899];
+      } else if (shot.smallPhoto) {
+        // A small JPG with a normal name — flagged only by the size rule.
+        base = `IMG_${shot.date.slice(0, 10).replace(/-/g, "")}_${String(counter).padStart(4, "0")}`;
+        ext = "jpg";
+        [w, h] = [640, 480];
       } else if (shot.longName) {
         base = `IMG_${shot.date.slice(0, 10).replace(/-/g, "")}_long_filename_example_${n}`;
         ext = "jpg";
       } else {
         base = `IMG_${shot.date.slice(0, 10).replace(/-/g, "")}_${String(counter).padStart(4, "0")}`;
         ext = "jpg";
+      }
+      // Camera-sized photos: several thousand px so they stay above SMALL_DIM.
+      if (!isVideo && w == null) {
+        w = 2400 + (counter % 3) * 400;
+        h = 1600 + ((counter * 7) % 3) * 400;
       }
       const mediaName = `${base}.${ext}`;
       const mediaPath = path.join(dir, mediaName);
@@ -202,7 +214,7 @@ async function main() {
         await fs.copyFile(src, mediaPath);
         vidCount++;
       } else {
-        await makeImage(mediaPath, album.folder, shot.date.slice(0, 10), counter, ext);
+        await makeImage(mediaPath, album.folder, shot.date.slice(0, 10), counter, ext, w, h);
         imgCount++;
       }
 

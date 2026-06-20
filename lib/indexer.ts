@@ -7,6 +7,9 @@ import { THUMBS_DIR, thumbPath, ensureAppDir } from "./paths";
 const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tiff"]);
 const VIDEO_EXT = new Set([".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".3gp"]);
 const THUMB_SIZE = 400;
+// Images smaller than this in either dimension are treated as screenshots /
+// non-photos — real camera photos are several thousand pixels on a side.
+const SMALL_DIM = 1000;
 
 export type IndexProgress = {
   // 'indexing' = scanning files + thumbnails (blocks the browse UI)
@@ -75,17 +78,23 @@ function sidecarBase(jsonName: string): string {
 //     are PNG with no GPS — whereas real iPhone photos are HEIC/JPG (and usually
 //     carry GPS). So a PNG image with no location is almost always a screenshot
 //     or saved graphic, not a camera photo.
+//   - Any image that is small in either dimension (< SMALL_DIM) — camera photos
+//     are several thousand pixels per side, so small images are screenshots,
+//     crops, saved graphics, or other non-photos.
 function detectScreenshot(
   filename: string,
   album: string | null,
   isVideo: boolean,
   ext: string,
   hasGeo: boolean,
+  width: number | null,
+  height: number | null,
 ): boolean {
   if (isVideo) return false; // screen *recordings* stay videos
   if (/screen[\s_-]?shot|scrnli/i.test(filename)) return true;
   if (album && /screenshot/i.test(album)) return true;
   if (ext === ".png" && !hasGeo) return true; // iOS/Android screenshots
+  if (width != null && height != null && (width < SMALL_DIM || height < SMALL_DIM)) return true;
   return false;
 }
 
@@ -192,11 +201,22 @@ async function collectMedia(root: string): Promise<MediaItem[]> {
   return items;
 }
 
-async function makeThumb(
-  item: MediaItem,
-  id: number,
-  isVideo: boolean,
-): Promise<{ width: number | null; height: number | null }> {
+// Cheap header read of an image's dimensions (accounting for EXIF rotation),
+// needed before insert so screenshot detection can use the size.
+async function probeImage(filePath: string): Promise<{ width: number | null; height: number | null }> {
+  try {
+    const m = await sharp(filePath, { failOn: "none" }).metadata();
+    // Orientation 5-8 mean the image is rotated 90°, so swap reported dims.
+    const rotated = (m.orientation ?? 0) >= 5;
+    const w = m.width ?? null;
+    const h = m.height ?? null;
+    return rotated ? { width: h, height: w } : { width: w, height: h };
+  } catch {
+    return { width: null, height: null };
+  }
+}
+
+async function makeThumb(item: MediaItem, id: number, isVideo: boolean): Promise<void> {
   const out = thumbPath(id);
   if (isVideo) {
     // No ffmpeg available — render a dark placeholder tile with a play glyph.
@@ -206,19 +226,16 @@ async function makeThumb(
       <path d="M ${THUMB_SIZE / 2 - 10} ${THUMB_SIZE * 0.33 - 16} L ${THUMB_SIZE / 2 + 18} ${THUMB_SIZE * 0.33} L ${THUMB_SIZE / 2 - 10} ${THUMB_SIZE * 0.33 + 16} Z" fill="#18181b"/>
     </svg>`;
     await sharp(Buffer.from(svg)).jpeg({ quality: 80 }).toFile(out);
-    return { width: null, height: null };
+    return;
   }
   try {
-    const img = sharp(item.filePath, { failOn: "none" });
-    const meta = await img.metadata();
-    await img
+    await sharp(item.filePath, { failOn: "none" })
       .rotate()
       .resize(THUMB_SIZE, THUMB_SIZE, { fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 78 })
       .toFile(out);
-    return { width: meta.width ?? null, height: meta.height ?? null };
   } catch {
-    return { width: null, height: null };
+    /* unreadable image — no thumbnail */
   }
 }
 
@@ -304,7 +321,7 @@ export async function runIndex(root: string): Promise<void> {
         @latitude, @longitude, @location_name, @title, @description, @device_type, @thumbnail_path, @width, @height, @is_screenshot)
       ON CONFLICT(file_path) DO NOTHING
     `);
-    const setThumb = db.prepare("UPDATE photos SET thumbnail_path=@t, width=@w, height=@h WHERE id=@id");
+    const setThumbPath = db.prepare("UPDATE photos SET thumbnail_path=@t WHERE id=@id");
 
     // Group sidecar JSONs per directory for fallback matching.
     const dirJsonCache = new Map<string, string[]>();
@@ -350,6 +367,11 @@ export async function runIndex(root: string): Promise<void> {
       const lon = sidecar?.geoData?.longitude || null;
       const hasGeo = lat != null && lon != null && (lat !== 0 || lon !== 0);
 
+      // Probe dimensions before insert so screenshot detection can use the size.
+      const { width, height } = isVideo
+        ? { width: null, height: null }
+        : await probeImage(item.filePath);
+
       const info = insert.run({
         file_path: item.filePath,
         filename: item.filename,
@@ -364,15 +386,17 @@ export async function runIndex(root: string): Promise<void> {
         description: sidecar?.description || null,
         device_type: sidecar?.googlePhotosOrigin?.mobileUpload?.deviceType ?? null,
         thumbnail_path: null,
-        width: null,
-        height: null,
-        is_screenshot: detectScreenshot(item.filename, item.album, isVideo, ext, hasGeo) ? 1 : 0,
+        width,
+        height,
+        is_screenshot: detectScreenshot(item.filename, item.album, isVideo, ext, hasGeo, width, height)
+          ? 1
+          : 0,
       });
 
       if (info.changes > 0) {
         const id = Number(info.lastInsertRowid);
-        const { width, height } = await makeThumb(item, id, isVideo);
-        setThumb.run({ t: thumbPath(id), w: width, h: height, id });
+        await makeThumb(item, id, isVideo);
+        setThumbPath.run({ t: thumbPath(id), id });
       }
       progress.processed++;
     }

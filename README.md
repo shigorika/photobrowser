@@ -70,8 +70,14 @@ folder, and for each media file:
    appear as `….supplemental-me.json` or `….suppl.json`. The indexer reproduces
    that truncation rule for an exact match, with a prefix-based fallback.
 3. Extracts `photoTakenTime` (preferred), `creationTime`, GPS, description,
-   device, etc.
-4. Generates a 400px thumbnail (a placeholder tile for videos, since no ffmpeg).
+   device, dimensions, etc.
+4. Flags screenshots / non-photos (filter them separately from "Photos") using:
+   a `Screenshot…` filename or a "Screenshots" folder; a PNG with no GPS (iPhone
+   screenshots are `IMG_XXXX.PNG`); or any image **under 1000px in either
+   dimension** (camera photos are several thousand px per side, so small images
+   are screenshots, crops, or saved graphics). Check the count in the sidebar
+   header to sanity-check detection; tune the rules in `detectScreenshot`.
+5. Generates a 400px thumbnail (a placeholder tile for videos, since no ffmpeg).
 
 As soon as this finishes the grid is usable.
 
