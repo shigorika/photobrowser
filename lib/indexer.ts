@@ -9,32 +9,47 @@ const VIDEO_EXT = new Set([".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".3g
 const THUMB_SIZE = 400;
 
 export type IndexProgress = {
-  running: boolean;
+  // 'indexing' = scanning files + thumbnails (blocks the browse UI)
+  // 'geocoding' = background reverse-geocoding (UI is already usable)
+  phase: "idle" | "indexing" | "geocoding" | "done";
+  running: boolean; // indexing phase active
+  geocoding: boolean; // background geocoding active
   done: boolean;
   error: string | null;
   total: number;
   processed: number;
-  geocoded: number;
+  geoTotal: number; // distinct locations to resolve
+  geoDone: number;
   currentFile: string;
   startedAt: number | null;
   finishedAt: number | null;
 };
 
-// Module-level singleton: the dev/prod Node server keeps this across requests.
+// Module-level singletons: the Node server keeps these across requests.
 const progress: IndexProgress = {
+  phase: "idle",
   running: false,
+  geocoding: false,
   done: false,
   error: null,
   total: 0,
   processed: 0,
-  geocoded: 0,
+  geoTotal: 0,
+  geoDone: 0,
   currentFile: "",
   startedAt: null,
   finishedAt: null,
 };
 
+// Guards the entire run (both phases) against a concurrent start.
+let busy = false;
+
 export function getProgress(): IndexProgress {
   return { ...progress };
+}
+
+export function isBusy(): boolean {
+  return busy;
 }
 
 // Reproduce Google Takeout's sidecar filename: media name + the supplemental
@@ -75,10 +90,15 @@ async function readJson<T>(p: string): Promise<T | null> {
 // ---- Reverse geocoding (Nominatim, rate-limited to 1 req/sec) ----
 let lastGeocodeAt = 0;
 const GEOCODE_MIN_INTERVAL = 1100;
+const GEOCODE_TIMEOUT = 8000;
+
+function coordKey(lat: number, lon: number): string {
+  return `${lat.toFixed(3)},${lon.toFixed(3)}`; // ~110m buckets, dedupes nearby shots
+}
 
 async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
   const db = getDb();
-  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  const key = coordKey(lat, lon);
   const cached = db.prepare("SELECT name FROM geocode_cache WHERE key = ?").get(key) as
     | { name: string | null }
     | undefined;
@@ -91,22 +111,28 @@ async function reverseGeocode(lat: number, lon: number): Promise<string | null> 
   let name: string | null = null;
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=en`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "photobrowser-local/1.0 (personal Takeout browser)" },
-    });
-    if (res.ok) {
-      const j = (await res.json()) as { address?: Record<string, string> };
-      const a = j.address || {};
-      const city = a.city || a.town || a.village || a.county || a.state_district || a.state;
-      const country = a.country;
-      name = [city, country].filter(Boolean).join(", ") || null;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), GEOCODE_TIMEOUT);
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "photobrowser-local/1.0 (personal Takeout browser)" },
+        signal: ctrl.signal,
+      });
+      if (res.ok) {
+        const j = (await res.json()) as { address?: Record<string, string> };
+        const a = j.address || {};
+        const city = a.city || a.town || a.village || a.county || a.state_district || a.state;
+        const country = a.country;
+        name = [city, country].filter(Boolean).join(", ") || null;
+      }
+    } finally {
+      clearTimeout(timer);
     }
   } catch {
-    name = null;
+    name = null; // network error / timeout -> leave unresolved (still cached as null)
   }
 
   db.prepare("INSERT OR REPLACE INTO geocode_cache(key, name) VALUES (?, ?)").run(key, name);
-  if (name) progress.geocoded++;
   return name;
 }
 
@@ -124,10 +150,9 @@ async function collectMedia(root: string): Promise<MediaItem[]> {
     }
 
     // Album title: prefer metadata.json's title, else the folder name.
-    let album: string | null = null;
     const folderName = path.basename(dir);
     const meta = await readJson<{ title?: string }>(path.join(dir, "metadata.json"));
-    album = meta?.title?.trim() || folderName;
+    const album = meta?.title?.trim() || folderName;
 
     for (const e of entries) {
       const full = path.join(dir, e.name);
@@ -146,7 +171,11 @@ async function collectMedia(root: string): Promise<MediaItem[]> {
   return items;
 }
 
-async function makeThumb(item: MediaItem, id: number, isVideo: boolean): Promise<{ width: number | null; height: number | null }> {
+async function makeThumb(
+  item: MediaItem,
+  id: number,
+  isVideo: boolean,
+): Promise<{ width: number | null; height: number | null }> {
   const out = thumbPath(id);
   if (isVideo) {
     // No ffmpeg available — render a dark placeholder tile with a play glyph.
@@ -172,20 +201,67 @@ async function makeThumb(item: MediaItem, id: number, isVideo: boolean): Promise
   }
 }
 
+// Phase 2: reverse-geocode the deduplicated set of distinct coordinates and
+// fill location_name across all matching rows. Runs after the index is browsable.
+async function geocodeAll(): Promise<void> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      "SELECT id, latitude, longitude FROM photos WHERE latitude IS NOT NULL AND longitude IS NOT NULL",
+    )
+    .all() as { id: number; latitude: number; longitude: number }[];
+
+  // Group photo ids by rounded coordinate so each location is geocoded once.
+  const groups = new Map<string, { lat: number; lon: number; ids: number[] }>();
+  for (const r of rows) {
+    const key = coordKey(r.latitude, r.longitude);
+    let g = groups.get(key);
+    if (!g) {
+      g = { lat: r.latitude, lon: r.longitude, ids: [] };
+      groups.set(key, g);
+    }
+    g.ids.push(r.id);
+  }
+
+  progress.phase = "geocoding";
+  progress.geocoding = true;
+  progress.geoTotal = groups.size;
+  progress.geoDone = 0;
+
+  const update = db.prepare("UPDATE photos SET location_name = ? WHERE id = ?");
+  const applyMany = db.transaction((ids: number[], name: string | null) => {
+    for (const id of ids) update.run(name, id);
+  });
+
+  for (const g of groups.values()) {
+    const name = await reverseGeocode(g.lat, g.lon);
+    applyMany(g.ids, name);
+    progress.geoDone++;
+    progress.currentFile = name || `${g.lat.toFixed(3)}, ${g.lon.toFixed(3)}`;
+  }
+
+  progress.geocoding = false;
+  progress.currentFile = "";
+}
+
 export async function runIndex(root: string): Promise<void> {
-  if (progress.running) return;
+  if (busy) return;
+  busy = true;
   ensureAppDir();
   Object.assign(progress, {
+    phase: "indexing",
     running: true,
+    geocoding: false,
     done: false,
     error: null,
     total: 0,
     processed: 0,
-    geocoded: 0,
+    geoTotal: 0,
+    geoDone: 0,
     currentFile: "",
     startedAt: Date.now(),
     finishedAt: null,
-  });
+  } satisfies IndexProgress);
 
   const db = getDb();
   try {
@@ -225,15 +301,15 @@ export async function runIndex(root: string): Promise<void> {
       return names;
     }
 
+    // ---- Phase 1: metadata + thumbnails (no network) ----
     for (const item of media) {
       progress.currentFile = item.filename;
       const ext = path.extname(item.filename).toLowerCase();
       const isVideo = VIDEO_EXT.has(ext);
 
       // Locate the sidecar JSON.
-      let sidecar: Sidecar | null = null;
       const expected = path.join(item.dir, expectedSidecar(item.filename));
-      sidecar = await readJson<Sidecar>(expected);
+      let sidecar = await readJson<Sidecar>(expected);
       if (!sidecar) {
         const candidates = await jsonsIn(item.dir);
         const match = candidates.find((n) => {
@@ -253,9 +329,6 @@ export async function runIndex(root: string): Promise<void> {
       const lon = sidecar?.geoData?.longitude || null;
       const hasGeo = lat != null && lon != null && (lat !== 0 || lon !== 0);
 
-      let location: string | null = null;
-      if (hasGeo) location = await reverseGeocode(lat!, lon!);
-
       const info = insert.run({
         file_path: item.filePath,
         filename: item.filename,
@@ -265,7 +338,7 @@ export async function runIndex(root: string): Promise<void> {
         created_at: created,
         latitude: hasGeo ? lat : null,
         longitude: hasGeo ? lon : null,
-        location_name: location,
+        location_name: null, // filled in by the geocoding phase
         title: sidecar?.title ?? item.filename,
         description: sidecar?.description || null,
         device_type: sidecar?.googlePhotosOrigin?.mobileUpload?.deviceType ?? null,
@@ -274,20 +347,29 @@ export async function runIndex(root: string): Promise<void> {
         height: null,
       });
 
-      const id = Number(info.lastInsertRowid);
-      if (id > 0) {
+      if (info.changes > 0) {
+        const id = Number(info.lastInsertRowid);
         const { width, height } = await makeThumb(item, id, isVideo);
         setThumb.run({ t: thumbPath(id), w: width, h: height, id });
       }
       progress.processed++;
     }
 
+    // Index is now browsable — release the UI before geocoding.
+    progress.running = false;
     progress.done = true;
+
+    // ---- Phase 2: background reverse-geocoding ----
+    await geocodeAll();
+
+    progress.phase = "done";
   } catch (err) {
     progress.error = err instanceof Error ? err.message : String(err);
   } finally {
     progress.running = false;
+    progress.geocoding = false;
     progress.finishedAt = Date.now();
     progress.currentFile = "";
+    busy = false;
   }
 }

@@ -77,24 +77,38 @@ export default function Page() {
     }
   }, []);
 
-  // Indexing finished -> refresh facets + grid.
+  // Drive the indexing -> geocoding -> done lifecycle.
   const wasRunning = useRef(false);
+  const wasActive = useRef(false);
   useEffect(() => {
     if (!status) return;
-    const running = status.progress.running;
-    if (running) {
-      wasRunning.current = true;
-      const id = setTimeout(fetchStatus, 1000);
-      return () => clearTimeout(id);
-    }
-    if (wasRunning.current && !running) {
+    const p = status.progress;
+
+    // Indexing finished: reveal the browser and load the grid.
+    if (wasRunning.current && !p.running) {
       wasRunning.current = false;
       setForceSetup(false);
       loadFacets();
       reloadPhotos(filters, 0);
     }
+    if (p.running) wasRunning.current = true;
+    if (p.running || p.geocoding) wasActive.current = true;
+
+    // Keep polling while indexing or background-geocoding.
+    if (p.running || p.geocoding) {
+      const id = setTimeout(fetchStatus, p.running ? 1000 : 2000);
+      // Refresh the sidebar as locations fill in (doesn't disturb the grid).
+      if (p.geocoding && !p.running) loadFacets();
+      return () => clearTimeout(id);
+    }
+
+    // Everything done: final sidebar refresh so all locations show.
+    if (wasActive.current) {
+      wasActive.current = false;
+      loadFacets();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.progress.running]);
+  }, [status?.progress.running, status?.progress.geocoding]);
 
   // Load facets + first page once an index exists.
   const hasIndex = (status?.stats.total ?? 0) > 0;
@@ -160,6 +174,13 @@ export default function Page() {
         onReindex={() => setForceSetup(true)}
       />
       <main className="flex-1 min-w-0">
+        {status.progress.geocoding && (
+          <div className="bg-blue-950/70 border-b border-blue-900 px-5 py-1.5 text-xs text-blue-200 flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            Resolving locations in the background…{" "}
+            {status.progress.geoDone}/{status.progress.geoTotal} places
+          </div>
+        )}
         <FilterBar
           filters={filters}
           total={total}

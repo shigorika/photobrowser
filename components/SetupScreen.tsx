@@ -66,12 +66,9 @@ export default function SetupScreen({
             <p className="text-xs text-neutral-500 mt-3 truncate">
               {progress.currentFile || "Scanning folders…"}
             </p>
-            {progress.geocoded > 0 && (
-              <p className="text-xs text-neutral-500 mt-1">
-                Reverse-geocoded {progress.geocoded} location
-                {progress.geocoded === 1 ? "" : "s"} (rate-limited to 1/sec)
-              </p>
-            )}
+            <p className="text-xs text-neutral-500 mt-1">
+              Locations are reverse-geocoded in the background once browsing starts.
+            </p>
           </div>
         ) : (
           <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">

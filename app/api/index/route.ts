@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
-import { runIndex, getProgress } from "@/lib/indexer";
+import { runIndex, isBusy } from "@/lib/indexer";
 import { writeConfig } from "@/lib/paths";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Folder not found or not accessible" }, { status: 400 });
   }
 
-  if (getProgress().running) {
+  if (isBusy()) {
     return NextResponse.json({ error: "Indexing already in progress" }, { status: 409 });
   }
 

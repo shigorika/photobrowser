@@ -41,12 +41,15 @@ export type Filters = {
 };
 
 export type IndexProgress = {
-  running: boolean;
+  phase: "idle" | "indexing" | "geocoding" | "done";
+  running: boolean; // indexing phase active (blocks the browse UI)
+  geocoding: boolean; // background geocoding active
   done: boolean;
   error: string | null;
   total: number;
   processed: number;
-  geocoded: number;
+  geoTotal: number; // distinct locations to resolve
+  geoDone: number;
   currentFile: string;
   startedAt: number | null;
   finishedAt: number | null;

@@ -58,7 +58,10 @@ quirks. Point the indexer at that folder.
 
 ## How indexing works
 
-`lib/indexer.ts` walks the folder, and for each media file:
+Indexing runs in two phases so the library is browsable quickly:
+
+**Phase 1 — index + thumbnails (fast, no network).** `lib/indexer.ts` walks the
+folder, and for each media file:
 
 1. Reads the album title from the folder's `metadata.json` (falls back to the
    folder name).
@@ -68,8 +71,16 @@ quirks. Point the indexer at that folder.
    that truncation rule for an exact match, with a prefix-based fallback.
 3. Extracts `photoTakenTime` (preferred), `creationTime`, GPS, description,
    device, etc.
-4. Reverse-geocodes GPS → "City, Country" (cached in the `geocode_cache` table).
-5. Generates a 400px thumbnail (a placeholder tile for videos, since no ffmpeg).
+4. Generates a 400px thumbnail (a placeholder tile for videos, since no ffmpeg).
+
+As soon as this finishes the grid is usable.
+
+**Phase 2 — reverse geocoding (background).** Distinct GPS coordinates are
+deduplicated (rounded to ~110m) and resolved to "City, Country" via Nominatim,
+rate-limited to 1 req/sec and cached in the `geocode_cache` table. Locations fill
+into the sidebar progressively while you browse, with a small progress banner.
+Because only *distinct* places are geocoded — not every file — this stays fast
+even for very large libraries, and a persisted cache makes re-indexing instant.
 
 ## Project layout
 
