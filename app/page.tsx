@@ -133,8 +133,8 @@ export default function Page() {
   // ---- Filter mutations ----
   const setScope = useCallback(
     (scope: Partial<Pick<Filters, "album" | "location" | "year" | "month">>) => {
-      // Keep orthogonal filters (q, type); replace the sidebar scope.
-      setFilters((f) => ({ q: f.q, type: f.type, ...scope }));
+      // Keep orthogonal filters (q, type, sort); replace the sidebar scope.
+      setFilters((f) => ({ q: f.q, type: f.type, sort: f.sort, ...scope }));
       setLightbox(null);
     },
     [],
@@ -187,6 +187,7 @@ export default function Page() {
           scopeLabel={scopeLabel}
           onSearch={(q) => setFilters((f) => ({ ...f, q: q || undefined }))}
           onType={(t) => setFilters((f) => ({ ...f, type: t }))}
+          onSort={(s) => setFilters((f) => ({ ...f, sort: s === "asc" ? "asc" : undefined }))}
           onClearScope={() => setScope({})}
         />
         <PhotoGrid

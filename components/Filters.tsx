@@ -9,6 +9,7 @@ export default function FilterBar({
   scopeLabel,
   onSearch,
   onType,
+  onSort,
   onClearScope,
 }: {
   filters: Filters;
@@ -16,6 +17,7 @@ export default function FilterBar({
   scopeLabel: string | null;
   onSearch: (q: string) => void;
   onType: (t: Filters["type"]) => void;
+  onSort: (s: "asc" | "desc") => void;
   onClearScope: () => void;
 }) {
   const [text, setText] = useState(filters.q || "");
@@ -65,6 +67,16 @@ export default function FilterBar({
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => onSort(filters.sort === "asc" ? "desc" : "asc")}
+          title="Sort by date taken"
+          className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900
+            hover:bg-neutral-800 text-neutral-300 px-3 py-2 text-sm whitespace-nowrap"
+        >
+          <span className="text-neutral-500">Date</span>
+          {filters.sort === "asc" ? "Oldest first ↑" : "Newest first ↓"}
+        </button>
       </div>
 
       <div className="flex items-center gap-2 mt-2 text-sm text-neutral-400">

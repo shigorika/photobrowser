@@ -7,6 +7,7 @@ export type PhotoFilters = {
   month?: number; // 1-12, requires year
   type?: "image" | "video";
   q?: string;
+  sort?: "asc" | "desc"; // by date taken; default "desc" (newest first)
 };
 
 export type PhotoRow = {
@@ -82,9 +83,9 @@ export function queryPhotos(f: PhotoFilters, limit: number, offset: number) {
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  // Newest first; NULL taken_at sinks to the bottom.
-  const order =
-    "ORDER BY (p.taken_at IS NULL) ASC, p.taken_at DESC, p.id DESC";
+  // Sort by date taken (default newest first); NULL taken_at always sinks last.
+  const dir = f.sort === "asc" ? "ASC" : "DESC";
+  const order = `ORDER BY (p.taken_at IS NULL) ASC, p.taken_at ${dir}, p.id ${dir}`;
 
   const rows = db
     .prepare(`SELECT ${GRID_COLUMNS} ${from} ${where} ${order} LIMIT @limit OFFSET @offset`)

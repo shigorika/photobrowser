@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     month: sp.get("month") ? parseInt(sp.get("month")!, 10) : undefined,
     type: (sp.get("type") as "image" | "video") || undefined,
     q: sp.get("q") || undefined,
+    sort: sp.get("sort") === "asc" ? "asc" : undefined,
   };
   const limit = Math.min(parseInt(sp.get("limit") || "60", 10) || 60, 200);
   const page = Math.max(parseInt(sp.get("page") || "0", 10) || 0, 0);

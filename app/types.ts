@@ -38,6 +38,7 @@ export type Filters = {
   month?: number;
   type?: "image" | "video";
   q?: string;
+  sort?: "asc" | "desc"; // by date taken; default "desc" (newest first)
 };
 
 export type IndexProgress = {
