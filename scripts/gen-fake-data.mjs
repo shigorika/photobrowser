@@ -102,6 +102,9 @@ const ALBUMS = [
       { city: null, date: "2024-03-30T13:00:00Z", desc: "Backyard BBQ", device: "IOS_PHONE" },
       // A screenshot sitting in a normal album — detected by filename prefix.
       { city: null, date: "2021-06-15T09:12:00Z", desc: "Recipe I saved", device: "ANDROID_PHONE", screenshot: true },
+      // iPhone screenshots: generic IMG_####.PNG names — detected by PNG + no GPS.
+      { city: null, date: "2024-05-02T14:22:00Z", desc: "", device: "IOS_PHONE", iosScreenshot: true },
+      { city: null, date: "2024-09-13T19:40:00Z", desc: "Concert tickets", device: "IOS_PHONE", iosScreenshot: true },
     ],
   },
   {
@@ -178,6 +181,10 @@ async function main() {
       } else if (shot.screenshot) {
         // Android-style screenshot filename (detected by the "Screenshot" prefix).
         base = `Screenshot_${shot.date.slice(0, 10).replace(/-/g, "")}-${String(100000 + counter)}`;
+        ext = "png";
+      } else if (shot.iosScreenshot) {
+        // iPhone screenshot: generic IMG name, PNG, no GPS (detected by PNG+no-geo).
+        base = `IMG_${String(3000 + counter)}`;
         ext = "png";
       } else if (shot.longName) {
         base = `IMG_${shot.date.slice(0, 10).replace(/-/g, "")}_long_filename_example_${n}`;

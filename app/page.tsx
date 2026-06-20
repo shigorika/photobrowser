@@ -77,14 +77,26 @@ export default function Page() {
     }
   }, []);
 
-  // Drive the indexing -> geocoding -> done lifecycle.
+  // Poll status on a steady interval while indexing or geocoding is active.
+  // (A self-rescheduling timeout keyed on the running/geocoding booleans stalls,
+  // because processed/geoDone change without flipping those booleans — so the
+  // effect never re-runs to reschedule. A fixed interval keeps the bar moving.)
+  const active = !!status && (status.progress.running || status.progress.geocoding);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(fetchStatus, 1000);
+    return () => clearInterval(id);
+  }, [active, fetchStatus]);
+
+  // Lifecycle transitions: reveal the browser when indexing ends; refresh the
+  // grid + sidebar when everything completes.
   const wasRunning = useRef(false);
   const wasActive = useRef(false);
   useEffect(() => {
     if (!status) return;
     const p = status.progress;
 
-    // Indexing finished: reveal the browser and load the grid.
+    // Indexing finished -> reveal the browser and load the grid.
     if (wasRunning.current && !p.running) {
       wasRunning.current = false;
       setForceSetup(false);
@@ -94,21 +106,23 @@ export default function Page() {
     if (p.running) wasRunning.current = true;
     if (p.running || p.geocoding) wasActive.current = true;
 
-    // Keep polling while indexing or background-geocoding.
-    if (p.running || p.geocoding) {
-      const id = setTimeout(fetchStatus, p.running ? 1000 : 2000);
-      // Refresh the sidebar as locations fill in (doesn't disturb the grid).
-      if (p.geocoding && !p.running) loadFacets();
-      return () => clearTimeout(id);
-    }
-
-    // Everything done: final sidebar refresh so all locations show.
-    if (wasActive.current) {
+    // Everything done -> final refresh so all locations show.
+    if (!p.running && !p.geocoding && wasActive.current) {
       wasActive.current = false;
       loadFacets();
+      reloadPhotos(filters, 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.progress.running, status?.progress.geocoding]);
+
+  // While geocoding in the background, periodically refresh the sidebar so
+  // location names fill in without disturbing the grid.
+  const geocoding = !!status && status.progress.geocoding && !status.progress.running;
+  useEffect(() => {
+    if (!geocoding) return;
+    const id = setInterval(loadFacets, 3000);
+    return () => clearInterval(id);
+  }, [geocoding, loadFacets]);
 
   // Load facets + first page once an index exists.
   const hasIndex = (status?.stats.total ?? 0) > 0;

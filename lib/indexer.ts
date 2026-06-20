@@ -68,14 +68,24 @@ function sidecarBase(jsonName: string): string {
   return jsonName.replace(/\.json$/i, "");
 }
 
-// Detect screenshots from the filename and album/folder name — the reliable
-// signals in a Takeout export. Android names them "Screenshot_YYYYMMDD-…" and/or
-// groups them in a "Screenshots" folder. Dimension/aspect heuristics are avoided
-// here because they false-positive on PNGs, memes, and saved images.
-function detectScreenshot(filename: string, album: string | null, isVideo: boolean): boolean {
+// Detect screenshots from filename, album/folder, and the PNG+no-GPS signal.
+//   - Android names them "Screenshot_YYYYMMDD-…" and/or groups them in a
+//     "Screenshots" folder.
+//   - iPhone screenshots are PNGs named "IMG_XXXX.PNG" with NO keyword, but they
+//     are PNG with no GPS — whereas real iPhone photos are HEIC/JPG (and usually
+//     carry GPS). So a PNG image with no location is almost always a screenshot
+//     or saved graphic, not a camera photo.
+function detectScreenshot(
+  filename: string,
+  album: string | null,
+  isVideo: boolean,
+  ext: string,
+  hasGeo: boolean,
+): boolean {
   if (isVideo) return false; // screen *recordings* stay videos
   if (/screen[\s_-]?shot|scrnli/i.test(filename)) return true;
   if (album && /screenshot/i.test(album)) return true;
+  if (ext === ".png" && !hasGeo) return true; // iOS/Android screenshots
   return false;
 }
 
@@ -356,7 +366,7 @@ export async function runIndex(root: string): Promise<void> {
         thumbnail_path: null,
         width: null,
         height: null,
-        is_screenshot: detectScreenshot(item.filename, item.album, isVideo) ? 1 : 0,
+        is_screenshot: detectScreenshot(item.filename, item.album, isVideo, ext, hasGeo) ? 1 : 0,
       });
 
       if (info.changes > 0) {
