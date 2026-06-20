@@ -49,7 +49,8 @@ export default function Sidebar({
       <div className="p-4 border-b border-neutral-800">
         <h1 className="text-lg font-semibold">Photo Browser</h1>
         <p className="text-xs text-neutral-500 mt-0.5">
-          {status.stats.total} items · {status.stats.images} photos ·{" "}
+          {status.stats.total} items · {status.stats.photos} photos
+          {status.stats.screenshots > 0 && <> · {status.stats.screenshots} screenshots</>} ·{" "}
           {status.stats.videos} videos
         </p>
       </div>

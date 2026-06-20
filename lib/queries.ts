@@ -5,7 +5,7 @@ export type PhotoFilters = {
   location?: string;
   year?: number;
   month?: number; // 1-12, requires year
-  type?: "image" | "video";
+  kind?: "photo" | "screenshot" | "video"; // photo = non-screenshot image
   q?: string;
   sort?: "asc" | "desc"; // by date taken; default "desc" (newest first)
 };
@@ -52,9 +52,12 @@ function buildWhere(f: PhotoFilters) {
     clauses.push("p.location_name = @location");
     params.location = f.location;
   }
-  if (f.type) {
-    clauses.push("p.media_type = @type");
-    params.type = f.type;
+  if (f.kind === "video") {
+    clauses.push("p.media_type = 'video'");
+  } else if (f.kind === "photo") {
+    clauses.push("p.media_type = 'image' AND p.is_screenshot = 0");
+  } else if (f.kind === "screenshot") {
+    clauses.push("p.media_type = 'image' AND p.is_screenshot = 1");
   }
   // Year/month filter on taken_at (unix seconds), computed in UTC.
   if (f.year) {
@@ -158,10 +161,17 @@ export function stats() {
     .prepare(
       `SELECT
         COUNT(*) AS total,
-        SUM(media_type = 'image') AS images,
+        SUM(media_type = 'image' AND is_screenshot = 0) AS photos,
+        SUM(media_type = 'image' AND is_screenshot = 1) AS screenshots,
         SUM(media_type = 'video') AS videos,
         SUM(location_name IS NOT NULL) AS located
       FROM photos`,
     )
-    .get() as { total: number; images: number; videos: number; located: number };
+    .get() as {
+    total: number;
+    photos: number;
+    screenshots: number;
+    videos: number;
+    located: number;
+  };
 }

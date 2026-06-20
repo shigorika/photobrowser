@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     location: sp.get("location") || undefined,
     year: sp.get("year") ? parseInt(sp.get("year")!, 10) : undefined,
     month: sp.get("month") ? parseInt(sp.get("month")!, 10) : undefined,
-    type: (sp.get("type") as "image" | "video") || undefined,
+    kind: (sp.get("kind") as "photo" | "screenshot" | "video") || undefined,
     q: sp.get("q") || undefined,
     sort: sp.get("sort") === "asc" ? "asc" : undefined,
   };

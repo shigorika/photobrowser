@@ -33,7 +33,7 @@ export function filtersToQuery(f: Filters, page = 0, limit = 60): string {
   if (f.location) sp.set("location", f.location);
   if (f.year) sp.set("year", String(f.year));
   if (f.month) sp.set("month", String(f.month));
-  if (f.type) sp.set("type", f.type);
+  if (f.kind) sp.set("kind", f.kind);
   if (f.q) sp.set("q", f.q);
   if (f.sort === "asc") sp.set("sort", "asc");
   sp.set("page", String(page));

@@ -100,6 +100,18 @@ const ALBUMS = [
       { city: "sydney", date: "2020-02-18T11:30:00Z", desc: "Bondi Beach", device: "ANDROID_PHONE" },
       { city: "sydney", date: "2020-02-19T14:00:00Z", desc: "Opera House", device: "ANDROID_PHONE" },
       { city: null, date: "2024-03-30T13:00:00Z", desc: "Backyard BBQ", device: "IOS_PHONE" },
+      // A screenshot sitting in a normal album — detected by filename prefix.
+      { city: null, date: "2021-06-15T09:12:00Z", desc: "Recipe I saved", device: "ANDROID_PHONE", screenshot: true },
+    ],
+  },
+  {
+    folder: "Screenshots",
+    title: "Screenshots",
+    shots: [
+      { city: null, date: "2022-01-08T22:14:00Z", desc: "", device: "ANDROID_PHONE", screenshot: true },
+      { city: null, date: "2022-03-19T11:47:00Z", desc: "Boarding pass", device: "ANDROID_PHONE", screenshot: true },
+      { city: null, date: "2023-02-02T18:05:00Z", desc: "", device: "ANDROID_PHONE", screenshot: true },
+      { city: null, date: "2023-08-21T08:30:00Z", desc: "Chat", device: "ANDROID_PHONE", screenshot: true },
     ],
   },
 ];
@@ -110,7 +122,7 @@ const PALETTES = [
   ["#713f12", "#facc15"], ["#3f3f46", "#a1a1aa"],
 ];
 
-async function makeImage(file, label, sub, seed) {
+async function makeImage(file, label, sub, seed, ext = "jpg") {
   const [c1, c2] = PALETTES[seed % PALETTES.length];
   const w = 1000 + (seed % 3) * 200;
   const h = 700 + ((seed * 7) % 3) * 180;
@@ -125,7 +137,8 @@ async function makeImage(file, label, sub, seed) {
     <text x="50%" y="58%" font-family="Helvetica,Arial,sans-serif" font-size="${Math.round(w / 36)}"
       fill="#ffffff" fill-opacity="0.85" text-anchor="middle">${sub}</text>
   </svg>`;
-  await sharp(Buffer.from(svg)).jpeg({ quality: 82 }).toFile(file);
+  const s = sharp(Buffer.from(svg));
+  await (ext === "png" ? s.png() : s.jpeg({ quality: 82 })).toFile(file);
 }
 
 // Reproduce Google's sidecar naming: full name truncated to 51 chars, ".json" kept.
@@ -158,14 +171,21 @@ async function main() {
       const created = taken + Math.floor(rand() * 86400); // uploaded sometime later
       const isVideo = shot.video && videoSrcExists.length > 0;
 
-      let base;
-      if (shot.longName) {
+      let base, ext;
+      if (isVideo) {
+        base = `VID_${shot.date.slice(0, 10).replace(/-/g, "")}_${String(counter).padStart(4, "0")}`;
+        ext = "mp4";
+      } else if (shot.screenshot) {
+        // Android-style screenshot filename (detected by the "Screenshot" prefix).
+        base = `Screenshot_${shot.date.slice(0, 10).replace(/-/g, "")}-${String(100000 + counter)}`;
+        ext = "png";
+      } else if (shot.longName) {
         base = `IMG_${shot.date.slice(0, 10).replace(/-/g, "")}_long_filename_example_${n}`;
+        ext = "jpg";
       } else {
-        const prefix = isVideo ? "VID" : "IMG";
-        base = `${prefix}_${shot.date.slice(0, 10).replace(/-/g, "")}_${String(counter).padStart(4, "0")}`;
+        base = `IMG_${shot.date.slice(0, 10).replace(/-/g, "")}_${String(counter).padStart(4, "0")}`;
+        ext = "jpg";
       }
-      const ext = isVideo ? "mp4" : "jpg";
       const mediaName = `${base}.${ext}`;
       const mediaPath = path.join(dir, mediaName);
 
@@ -175,7 +195,7 @@ async function main() {
         await fs.copyFile(src, mediaPath);
         vidCount++;
       } else {
-        await makeImage(mediaPath, album.folder, shot.date.slice(0, 10), counter);
+        await makeImage(mediaPath, album.folder, shot.date.slice(0, 10), counter, ext);
         imgCount++;
       }
 

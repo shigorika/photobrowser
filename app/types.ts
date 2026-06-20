@@ -36,7 +36,7 @@ export type Filters = {
   location?: string;
   year?: number;
   month?: number;
-  type?: "image" | "video";
+  kind?: "photo" | "screenshot" | "video"; // photo = non-screenshot image
   q?: string;
   sort?: "asc" | "desc"; // by date taken; default "desc" (newest first)
 };
@@ -59,5 +59,11 @@ export type IndexProgress = {
 export type Status = {
   progress: IndexProgress;
   rootPath: string | null;
-  stats: { total: number; images: number; videos: number; located: number };
+  stats: {
+    total: number;
+    photos: number;
+    screenshots: number;
+    videos: number;
+    located: number;
+  };
 };

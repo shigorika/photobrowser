@@ -8,7 +8,7 @@ export default function FilterBar({
   total,
   scopeLabel,
   onSearch,
-  onType,
+  onKind,
   onSort,
   onClearScope,
 }: {
@@ -16,7 +16,7 @@ export default function FilterBar({
   total: number;
   scopeLabel: string | null;
   onSearch: (q: string) => void;
-  onType: (t: Filters["type"]) => void;
+  onKind: (k: Filters["kind"]) => void;
   onSort: (s: "asc" | "desc") => void;
   onClearScope: () => void;
 }) {
@@ -35,9 +35,10 @@ export default function FilterBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.q]);
 
-  const types: { label: string; value: Filters["type"] }[] = [
+  const kinds: { label: string; value: Filters["kind"] }[] = [
     { label: "All", value: undefined },
-    { label: "Photos", value: "image" },
+    { label: "Photos", value: "photo" },
+    { label: "Screenshots", value: "screenshot" },
     { label: "Videos", value: "video" },
   ];
 
@@ -53,17 +54,17 @@ export default function FilterBar({
         />
 
         <div className="flex rounded-lg border border-neutral-800 overflow-hidden text-sm">
-          {types.map((t) => (
+          {kinds.map((k) => (
             <button
-              key={t.label}
-              onClick={() => onType(t.value)}
+              key={k.label}
+              onClick={() => onKind(k.value)}
               className={`px-3 py-2 ${
-                (filters.type || undefined) === t.value
+                (filters.kind || undefined) === k.value
                   ? "bg-blue-600 text-white"
                   : "bg-neutral-900 hover:bg-neutral-800 text-neutral-300"
               }`}
             >
-              {t.label}
+              {k.label}
             </button>
           ))}
         </div>

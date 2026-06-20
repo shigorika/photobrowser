@@ -68,6 +68,17 @@ function sidecarBase(jsonName: string): string {
   return jsonName.replace(/\.json$/i, "");
 }
 
+// Detect screenshots from the filename and album/folder name — the reliable
+// signals in a Takeout export. Android names them "Screenshot_YYYYMMDD-…" and/or
+// groups them in a "Screenshots" folder. Dimension/aspect heuristics are avoided
+// here because they false-positive on PNGs, memes, and saved images.
+function detectScreenshot(filename: string, album: string | null, isVideo: boolean): boolean {
+  if (isVideo) return false; // screen *recordings* stay videos
+  if (/screen[\s_-]?shot|scrnli/i.test(filename)) return true;
+  if (album && /screenshot/i.test(album)) return true;
+  return false;
+}
+
 type Sidecar = {
   title?: string;
   description?: string;
@@ -278,9 +289,9 @@ export async function runIndex(root: string): Promise<void> {
 
     const insert = db.prepare(`
       INSERT INTO photos (file_path, filename, media_type, album, taken_at, created_at,
-        latitude, longitude, location_name, title, description, device_type, thumbnail_path, width, height)
+        latitude, longitude, location_name, title, description, device_type, thumbnail_path, width, height, is_screenshot)
       VALUES (@file_path, @filename, @media_type, @album, @taken_at, @created_at,
-        @latitude, @longitude, @location_name, @title, @description, @device_type, @thumbnail_path, @width, @height)
+        @latitude, @longitude, @location_name, @title, @description, @device_type, @thumbnail_path, @width, @height, @is_screenshot)
       ON CONFLICT(file_path) DO NOTHING
     `);
     const setThumb = db.prepare("UPDATE photos SET thumbnail_path=@t, width=@w, height=@h WHERE id=@id");
@@ -345,6 +356,7 @@ export async function runIndex(root: string): Promise<void> {
         thumbnail_path: null,
         width: null,
         height: null,
+        is_screenshot: detectScreenshot(item.filename, item.album, isVideo) ? 1 : 0,
       });
 
       if (info.changes > 0) {

@@ -133,8 +133,8 @@ export default function Page() {
   // ---- Filter mutations ----
   const setScope = useCallback(
     (scope: Partial<Pick<Filters, "album" | "location" | "year" | "month">>) => {
-      // Keep orthogonal filters (q, type, sort); replace the sidebar scope.
-      setFilters((f) => ({ q: f.q, type: f.type, sort: f.sort, ...scope }));
+      // Keep orthogonal filters (q, kind, sort); replace the sidebar scope.
+      setFilters((f) => ({ q: f.q, kind: f.kind, sort: f.sort, ...scope }));
       setLightbox(null);
     },
     [],
@@ -186,7 +186,7 @@ export default function Page() {
           total={total}
           scopeLabel={scopeLabel}
           onSearch={(q) => setFilters((f) => ({ ...f, q: q || undefined }))}
-          onType={(t) => setFilters((f) => ({ ...f, type: t }))}
+          onKind={(k) => setFilters((f) => ({ ...f, kind: k }))}
           onSort={(s) => setFilters((f) => ({ ...f, sort: s === "asc" ? "asc" : undefined }))}
           onClearScope={() => setScope({})}
         />

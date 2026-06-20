@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const cfg = readConfig();
-  let s = { total: 0, images: 0, videos: 0, located: 0 };
+  let s = { total: 0, photos: 0, screenshots: 0, videos: 0, located: 0 };
   try {
     s = stats();
   } catch {

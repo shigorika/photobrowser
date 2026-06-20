@@ -51,12 +51,14 @@ function migrate(db: Database.Database) {
       device_type TEXT,
       thumbnail_path TEXT,
       width INTEGER,
-      height INTEGER
+      height INTEGER,
+      is_screenshot INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_taken_at ON photos(taken_at);
     CREATE INDEX IF NOT EXISTS idx_album ON photos(album);
     CREATE INDEX IF NOT EXISTS idx_location ON photos(location_name);
+    CREATE INDEX IF NOT EXISTS idx_is_screenshot ON photos(is_screenshot);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS photos_fts USING fts5(
       filename, title, description,
@@ -86,6 +88,14 @@ function migrate(db: Database.Database) {
       name TEXT
     );
   `);
+
+  // Add columns introduced after a DB was first created (CREATE TABLE IF NOT
+  // EXISTS won't alter an existing table). Re-index to populate them.
+  const cols = db.prepare("PRAGMA table_info(photos)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "is_screenshot")) {
+    db.exec("ALTER TABLE photos ADD COLUMN is_screenshot INTEGER NOT NULL DEFAULT 0");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_is_screenshot ON photos(is_screenshot)");
+  }
 }
 
 export function resetIndex() {
